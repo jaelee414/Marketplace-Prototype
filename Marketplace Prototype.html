@@ -1,0 +1,1369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Marketplace — Twenty PM Prototype</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            surface: '#0f0f0f',
+            panel: '#161616',
+            border: '#2a2a2a',
+            muted: '#6b6b6b',
+            accent: '#22d3ee',
+            accentDim: '#0e7490',
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+          zIndex: {
+            60: '60',
+          },
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { background: #0f0f0f; margin: 0; font-family: 'Inter', system-ui, sans-serif; }
+    ::selection { background: rgba(34,211,238,0.2); }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0f0f0f; }
+    ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
+
+    /* Slide-in panel */
+    .panel-enter { animation: slideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    .panel-exit  { animation: slideOut 0.18s ease-in forwards; }
+    @keyframes slideIn  { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes slideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
+
+    /* Fade in */
+    .fade-in { animation: fadeIn 0.25s ease forwards; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Intro pulse */
+    .pulse-dot { animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+    /* Dot grid background */
+    .dot-grid {
+      background-image: radial-gradient(circle, #2a2a2a 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+
+    /* Toast */
+    .toast-enter { animation: toastIn 0.2s cubic-bezier(0.16,1,0.3,1) forwards; }
+    .toast-exit  { animation: toastOut 0.15s ease-in forwards; }
+    @keyframes toastIn  { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    @keyframes toastOut { from { opacity: 1; } to { opacity: 0; } }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useCallback } = React;
+
+// ─── INITIAL STATE ─────────────────────────────────────────────────────────
+const INITIAL_STATE = {
+  role: 'seller', // 'seller' | 'buyerX' | 'buyerY'
+  screen: 'intro', // 'intro' | 'main'
+  wishlists: [
+    {
+      id: 'wl-1',
+      buyerId: 'dhs',
+      buyerName: 'DHS',
+      title: 'Seeking FedRAMP-authorized cyber threat intelligence platform',
+      tags: ['Threat Intelligence', 'FedRAMP'],
+      audience: 'AllVerifiedSellers',
+    }
+  ],
+  catalogItems: [],
+  accessGrants: [], // { itemId, buyerId, grantedAt }
+};
+
+// ─── ICONS (inline SVG, no lucide dep yet) ──────────────────────────────────
+const Icon = ({ name, size = 16, className = '' }) => {
+  const paths = {
+    grid: 'M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 0h7v7h-7z',
+    eye: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0',
+    users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 7a4 4 0 1 0 8 0 4 4 0 0 0-8 0 M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75',
+    shield: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
+    arrowRight: 'M5 12h14 M12 5l7 7-7 7',
+    x: 'M18 6 6 18 M6 6l12 12',
+    check: 'M20 6 9 17l-5-5',
+    plus: 'M12 5v14 M5 12h14',
+    chevronRight: 'M9 18l6-6-6-6',
+    logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9',
+    lock: 'M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2z M7 11V7a5 5 0 0 1 10 0v4',
+    user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
+  };
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"
+      className={className}>
+      {(paths[name] || '').split(' M').map((d, i) =>
+        <path key={i} d={i === 0 ? d : 'M' + d} />
+      )}
+    </svg>
+  );
+};
+
+// ─── ROLE CONFIGS ────────────────────────────────────────────────────────────
+const ROLES = [
+  { id: 'seller', label: 'Seller', sub: 'AcmeCyber' },
+  { id: 'buyerX', label: 'Buyer X', sub: 'DHS' },
+  { id: 'buyerY', label: 'Buyer Y', sub: 'DoD' },
+];
+
+// ─── HEADER ──────────────────────────────────────────────────────────────────
+function Header({ state, dispatch, onResetClick }) {
+  const { role } = state;
+
+  return (
+    <header className="fixed top-0 left-0 right-0 z-40 border-b" style={{ background: '#0f0f0f', borderColor: '#2a2a2a' }}>
+      <div className="max-w-7xl mx-auto px-6 h-14 flex items-center gap-6">
+        {/* Logo */}
+        <div className="flex items-center gap-2.5 mr-2">
+          <div className="w-6 h-6 rounded flex items-center justify-center" style={{ background: '#22d3ee20', border: '1px solid #22d3ee40' }}>
+            <div className="w-2 h-2 rounded-full" style={{ background: '#22d3ee' }}></div>
+          </div>
+          <span className="text-white font-semibold text-sm tracking-tight">Marketplace</span>
+          <span className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ background: '#ffffff0a', color: '#6b6b6b', border: '1px solid #2a2a2a' }}>beta</span>
+        </div>
+
+        {/* Role toggle — center */}
+        <div className="flex-1 flex justify-center">
+          <div className="flex items-center p-0.5 rounded-lg gap-0.5" style={{ background: '#161616', border: '1px solid #2a2a2a' }}>
+            {ROLES.map(r => (
+              <button
+                key={r.id}
+                onClick={() => dispatch({ type: 'SET_ROLE', role: r.id })}
+                className="relative px-4 py-1.5 rounded-md text-xs font-medium transition-all duration-150"
+                style={role === r.id ? {
+                  background: '#ffffff12',
+                  color: '#f0f0f0',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.4)',
+                } : {
+                  color: '#6b6b6b',
+                }}
+                onMouseEnter={e => { if (role !== r.id) e.currentTarget.style.color = '#a0a0a0'; }}
+                onMouseLeave={e => { if (role !== r.id) e.currentTarget.style.color = '#6b6b6b'; }}
+              >
+                <span>{r.label}</span>
+                <span className="ml-1.5" style={{ color: role === r.id ? '#22d3ee' : 'inherit' }}>({r.sub})</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Right actions */}
+        <div className="flex items-center gap-3">
+          {role === 'seller' && (
+            <nav className="flex items-center gap-1">
+              <NavBtn label="Dashboard" active={state.navTab === 'dashboard'} onClick={() => dispatch({ type: 'SET_NAV', tab: 'dashboard' })} />
+              <NavBtn label="Audience Overview" active={state.navTab === 'audience'} onClick={() => dispatch({ type: 'SET_NAV', tab: 'audience' })} />
+            </nav>
+          )}
+          <button
+            onClick={onResetClick}
+            className="text-xs px-3 py-1.5 rounded-md transition-all"
+            style={{ color: '#6b6b6b', border: '1px solid #2a2a2a' }}
+            onMouseEnter={e => { e.currentTarget.style.color = '#f0f0f0'; e.currentTarget.style.borderColor = '#444'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = '#6b6b6b'; e.currentTarget.style.borderColor = '#2a2a2a'; }}
+          >
+            Reset Demo
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function NavBtn({ label, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="text-xs px-3 py-1.5 rounded-md transition-all"
+      style={{ color: active ? '#f0f0f0' : '#6b6b6b', background: active ? '#ffffff0a' : 'transparent' }}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.color = '#a0a0a0'; }}
+      onMouseLeave={e => { if (!active) e.currentTarget.style.color = '#6b6b6b'; }}
+    >
+      {label}
+    </button>
+  );
+}
+
+// ─── TOAST ────────────────────────────────────────────────────────────────────
+function ToastContainer({ toasts }) {
+  return (
+    <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 items-end pointer-events-none">
+      {toasts.map(t => (
+        <div key={t.id} className="toast-enter flex items-center gap-2.5 px-4 py-2.5 rounded-lg text-xs font-medium"
+          style={{
+            background: t.type === 'success' ? '#161616' : '#1a0f0f',
+            border: `1px solid ${t.type === 'success' ? '#22d3ee30' : '#f8717130'}`,
+            color: t.type === 'success' ? '#67e8f9' : '#fca5a5',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+          }}>
+          <div className="w-1.5 h-1.5 rounded-full" style={{ background: t.type === 'success' ? '#22d3ee' : '#f87171' }}></div>
+          {t.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── DEMO GUIDE ───────────────────────────────────────────────────────────────
+const DEMO_ACTS = [
+  {
+    label: 'Act 1',
+    title: 'Seller creates & shares',
+    steps: [
+      'As AcmeCyber, see DHS wishlist in your feed',
+      'Click "Respond with catalog item"',
+      'Fill details → Step 2 pre-selects DHS',
+      'Save → item appears as "Shared with 1 Buyer"',
+    ],
+  },
+  {
+    label: 'Act 2',
+    title: 'Buyers see different views',
+    steps: [
+      'Switch to Buyer X (DHS) — item is visible',
+      'Switch to Buyer Y (DoD) — item is invisible',
+    ],
+  },
+  {
+    label: 'Act 3',
+    title: 'Seller revokes access',
+    steps: [
+      'Back as Seller → Audience Overview',
+      'Click Revoke on DHS row → Confirm',
+      'Switch to DHS — item is gone',
+    ],
+  },
+];
+
+function DemoGuide({ open, onToggle }) {
+  return (
+    <>
+      {/* Floating toggle */}
+      <button
+        onClick={onToggle}
+        className="fixed bottom-6 left-6 z-40 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all"
+        style={{
+          background: open ? '#22d3ee15' : '#161616',
+          border: `1px solid ${open ? '#22d3ee40' : '#2a2a2a'}`,
+          color: open ? '#22d3ee' : '#6b6b6b',
+        }}
+        onMouseEnter={e => { if (!open) { e.currentTarget.style.color = '#a0a0a0'; e.currentTarget.style.borderColor = '#3a3a3a'; }}}
+        onMouseLeave={e => { if (!open) { e.currentTarget.style.color = '#6b6b6b'; e.currentTarget.style.borderColor = '#2a2a2a'; }}}
+      >
+        <div className="w-1.5 h-1.5 rounded-full" style={{ background: open ? '#22d3ee' : '#3a3a3a' }}></div>
+        Demo Guide
+      </button>
+
+      {/* Guide panel */}
+      {open && (
+        <div className="fixed bottom-16 left-6 z-40 w-72 rounded-xl overflow-hidden fade-in"
+          style={{ background: '#161616', border: '1px solid #2a2a2a', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+          <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: '#2a2a2a' }}>
+            <span className="text-xs font-semibold text-white">Demo Narrative</span>
+            <span className="text-xs" style={{ color: '#4a4a4a' }}>3 acts</span>
+          </div>
+          <div className="p-4 flex flex-col gap-5">
+            {DEMO_ACTS.map((act, i) => (
+              <div key={act.label}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ background: '#22d3ee15', color: '#22d3ee', border: '1px solid #22d3ee25' }}>{act.label}</span>
+                  <span className="text-xs font-medium text-white">{act.title}</span>
+                </div>
+                <ol className="flex flex-col gap-1.5 pl-1">
+                  {act.steps.map((s, j) => (
+                    <li key={j} className="flex items-start gap-2 text-xs" style={{ color: '#6b6b6b' }}>
+                      <span className="shrink-0 mt-0.5 font-mono text-xs" style={{ color: '#3a3a3a' }}>{j+1}.</span>
+                      {s}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── INTRO SCREEN ─────────────────────────────────────────────────────────────
+function IntroScreen({ dispatch }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center px-6 fade-in dot-grid" style={{ background: '#0f0f0f' }}>
+      <div className="max-w-lg w-full">
+        {/* Logo mark */}
+        <div className="flex items-center gap-3 mb-10">
+          <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: '#22d3ee15', border: '1px solid #22d3ee30' }}>
+            <div className="w-3 h-3 rounded-full" style={{ background: '#22d3ee' }}></div>
+          </div>
+          <div>
+            <div className="text-white font-semibold text-lg tracking-tight">Marketplace</div>
+            <div className="text-xs" style={{ color: '#6b6b6b' }}>Government × Commercial</div>
+          </div>
+        </div>
+
+        {/* Context */}
+        <p className="text-sm leading-relaxed mb-8" style={{ color: '#a0a0a0' }}>
+          This prototype demonstrates granular catalog visibility controls between government Buyers
+          and commercial Sellers. Sellers can share specific catalog items with individual Buyers or
+          all verified Buyers — and revoke access at any time.
+        </p>
+
+        {/* Personas */}
+        <div className="mb-8 rounded-lg overflow-hidden" style={{ border: '1px solid #2a2a2a' }}>
+          <div className="px-4 py-2.5 text-xs font-medium uppercase tracking-widest" style={{ background: '#161616', color: '#6b6b6b', borderBottom: '1px solid #2a2a2a' }}>
+            Demo Personas
+          </div>
+          {[
+            { role: 'Seller', name: 'AcmeCyber', desc: 'Commercial cyber vendor' },
+            { role: 'Buyer X', name: 'DHS', desc: 'Department of Homeland Security' },
+            { role: 'Buyer Y', name: 'DoD', desc: 'Department of Defense' },
+          ].map((p, i, arr) => (
+            <div key={p.role} className="px-4 py-3 flex items-center gap-3" style={{ borderBottom: i < arr.length - 1 ? '1px solid #1e1e1e' : 'none' }}>
+              <div className="w-1.5 h-1.5 rounded-full pulse-dot" style={{ background: '#22d3ee', animationDelay: `${i * 0.4}s` }}></div>
+              <span className="text-xs font-medium" style={{ color: '#6b6b6b', minWidth: '60px' }}>{p.role}</span>
+              <span className="text-sm font-medium text-white">{p.name}</span>
+              <span className="text-xs ml-auto" style={{ color: '#4a4a4a' }}>{p.desc}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Pre-staged note */}
+        <div className="rounded-lg px-4 py-3 mb-8 flex items-start gap-3" style={{ background: '#22d3ee08', border: '1px solid #22d3ee20' }}>
+          <div className="w-1 h-1 rounded-full mt-1.5 flex-shrink-0" style={{ background: '#22d3ee' }}></div>
+          <p className="text-xs leading-relaxed" style={{ color: '#7dd3fc' }}>
+            Pre-staged: DHS has shared a wishlist item with all verified Sellers.
+            AcmeCyber's catalog starts empty.
+          </p>
+        </div>
+
+        {/* CTA */}
+        <button
+          onClick={() => dispatch({ type: 'START_DEMO' })}
+          className="w-full py-3 rounded-lg text-sm font-medium flex items-center justify-center gap-2.5 transition-all duration-150"
+          style={{ background: '#22d3ee', color: '#000' }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#67e8f9'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = '#22d3ee'; }}
+        >
+          Start Demo
+          <Icon name="arrowRight" size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── TAG PILL ────────────────────────────────────────────────────────────────
+function TagPill({ label, variant = 'default' }) {
+  const styles = {
+    default: { background: '#ffffff0a', color: '#a0a0a0', border: '1px solid #2a2a2a' },
+    accent:  { background: '#22d3ee10', color: '#67e8f9', border: '1px solid #22d3ee25' },
+  };
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style={styles[variant]}>
+      {label}
+    </span>
+  );
+}
+
+// ─── WISHLIST CARD ───────────────────────────────────────────────────────────
+function WishlistCard({ item, onRespond }) {
+  const [hovered, setHovered] = React.useState(false);
+  return (
+    <div
+      className="rounded-lg p-5 transition-all duration-150"
+      style={{
+        border: `1px solid ${hovered ? '#3a3a3a' : '#2a2a2a'}`,
+        background: hovered ? '#1a1a1a' : '#161616',
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {/* Header row */}
+      <div className="flex items-start justify-between gap-4 mb-3">
+        <div className="flex items-center gap-2.5">
+          {/* Buyer badge */}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-md" style={{ background: '#22d3ee10', border: '1px solid #22d3ee20' }}>
+            <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#22d3ee' }}></div>
+            <span className="text-xs font-semibold" style={{ color: '#22d3ee' }}>{item.buyerName}</span>
+          </div>
+          <span className="text-xs" style={{ color: '#4a4a4a' }}>Wishlist item</span>
+        </div>
+        {/* Audience note */}
+        <span className="text-xs shrink-0" style={{ color: '#4a4a4a' }}>
+          Shared with: All verified Sellers
+        </span>
+      </div>
+
+      {/* Title */}
+      <h3 className="text-sm font-medium text-white mb-3 leading-snug">{item.title}</h3>
+
+      {/* Tags */}
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        {item.tags.map(t => <TagPill key={t} label={t} variant="accent" />)}
+      </div>
+
+      {/* CTA */}
+      <button
+        onClick={() => onRespond(item)}
+        className="flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-md transition-all duration-150"
+        style={{ background: '#22d3ee', color: '#000' }}
+        onMouseEnter={e => { e.currentTarget.style.background = '#67e8f9'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = '#22d3ee'; }}
+      >
+        Respond with catalog item
+        <Icon name="arrowRight" size={12} />
+      </button>
+    </div>
+  );
+}
+
+// ─── CONSTANTS ───────────────────────────────────────────────────────────────
+const CAPABILITY_OPTIONS = ['Threat Intelligence', 'FedRAMP', 'Endpoint Security', 'SIEM', 'Zero Trust'];
+const BUYERS = [
+  { id: 'dhs', name: 'DHS', dept: 'Department of Homeland Security' },
+  { id: 'dod', name: 'DoD', dept: 'Department of Defense' },
+];
+
+// ─── FORM INPUT ───────────────────────────────────────────────────────────────
+function FormInput({ label, value, onChange, placeholder, type = 'text' }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium mb-1.5" style={{ color: '#a0a0a0' }}>{label}</label>
+      <input
+        type={type}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full px-3 py-2 rounded-md text-sm outline-none transition-all"
+        style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', color: '#f0f0f0' }}
+        onFocus={e => { e.target.style.borderColor = '#22d3ee40'; }}
+        onBlur={e => { e.target.style.borderColor = '#2a2a2a'; }}
+      />
+    </div>
+  );
+}
+
+function FormTextarea({ label, value, onChange, placeholder, rows = 3 }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium mb-1.5" style={{ color: '#a0a0a0' }}>{label}</label>
+      <textarea
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={rows}
+        className="w-full px-3 py-2 rounded-md text-sm outline-none transition-all resize-none"
+        style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', color: '#f0f0f0' }}
+        onFocus={e => { e.target.style.borderColor = '#22d3ee40'; }}
+        onBlur={e => { e.target.style.borderColor = '#2a2a2a'; }}
+      />
+    </div>
+  );
+}
+
+// ─── SHARING STEP (step 2, shared by create + manage flows) ──────────────────
+function SharingStep({ itemName, prefillBuyerId, initialAudience, onSave, onBack, onClose, isManage }) {
+  const defaultAud = React.useMemo(() => {
+    if (prefillBuyerId) return 'Select';
+    if (initialAudience === 'AllVerifiedBuyers') return 'AllVerifiedBuyers';
+    if (initialAudience?.type === 'Select') return 'Select';
+    return 'Private';
+  }, []);
+
+  const defaultSelected = React.useMemo(() => {
+    if (prefillBuyerId) return [prefillBuyerId];
+    if (initialAudience?.type === 'Select') return initialAudience.buyerIds || [];
+    return [];
+  }, []);
+
+  const [audienceType, setAudienceType] = React.useState(defaultAud);
+  const [selectedBuyers, setSelectedBuyers] = React.useState(defaultSelected);
+
+  const toggleBuyer = (id) => setSelectedBuyers(prev =>
+    prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+  );
+
+  const buildAudience = () => {
+    if (audienceType === 'Private') return 'Private';
+    if (audienceType === 'AllVerifiedBuyers') return 'AllVerifiedBuyers';
+    return { type: 'Select', buyerIds: selectedBuyers };
+  };
+
+  const canSave = audienceType !== 'Select' || selectedBuyers.length > 0;
+
+  const OPTS = [
+    { id: 'Private',          label: 'Private',               desc: 'Only you can see this item' },
+    { id: 'AllVerifiedBuyers',label: 'All verified Buyers',   desc: 'Every verified Buyer on the platform' },
+    { id: 'Select',           label: 'Select specific Buyers',desc: 'Choose individual Buyers below' },
+  ];
+
+  return (
+    <>
+      <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-6">
+        {/* Current status note */}
+        <div className="rounded-md px-3 py-2.5 flex items-center gap-2" style={{ background: '#ffffff05', border: '1px solid #2a2a2a' }}>
+          <Icon name="lock" size={12} style={{ color: '#6b6b6b' }} />
+          <span className="text-xs" style={{ color: '#6b6b6b' }}>
+            {isManage ? `Editing visibility for "${itemName}"` : 'This item is currently Private. Choose who can see it.'}
+          </span>
+        </div>
+
+        {/* Audience options */}
+        <div className="flex flex-col gap-2">
+          {OPTS.map(opt => {
+            const active = audienceType === opt.id;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => setAudienceType(opt.id)}
+                className="flex items-start gap-3 rounded-lg px-4 py-3 text-left transition-all"
+                style={{
+                  border: `1px solid ${active ? '#22d3ee40' : '#2a2a2a'}`,
+                  background: active ? '#22d3ee08' : '#0f0f0f',
+                }}
+              >
+                {/* Radio dot */}
+                <div className="mt-0.5 w-4 h-4 rounded-full flex items-center justify-center shrink-0"
+                  style={{ border: `1.5px solid ${active ? '#22d3ee' : '#3a3a3a'}`, background: active ? '#22d3ee20' : 'transparent' }}>
+                  {active && <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#22d3ee' }} />}
+                </div>
+                <div>
+                  <p className="text-xs font-medium" style={{ color: active ? '#f0f0f0' : '#a0a0a0' }}>{opt.label}</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#4a4a4a' }}>{opt.desc}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Buyer checklist (revealed when Select is chosen) */}
+        {audienceType === 'Select' && (
+          <div className="fade-in">
+            <p className="text-xs font-medium mb-2" style={{ color: '#a0a0a0' }}>Select Buyers</p>
+            <div className="flex flex-col gap-1.5">
+              {BUYERS.map(b => {
+                const checked = selectedBuyers.includes(b.id);
+                return (
+                  <button
+                    key={b.id}
+                    onClick={() => toggleBuyer(b.id)}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-md transition-all text-left"
+                    style={{
+                      border: `1px solid ${checked ? '#22d3ee30' : '#2a2a2a'}`,
+                      background: checked ? '#22d3ee08' : '#0f0f0f',
+                    }}
+                  >
+                    {/* Checkbox */}
+                    <div className="w-4 h-4 rounded flex items-center justify-center shrink-0"
+                      style={{ border: `1.5px solid ${checked ? '#22d3ee' : '#3a3a3a'}`, background: checked ? '#22d3ee' : 'transparent' }}>
+                      {checked && <Icon name="check" size={10} style={{ color: '#000' }} />}
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold" style={{ color: checked ? '#f0f0f0' : '#a0a0a0' }}>{b.name}</p>
+                      <p className="text-xs" style={{ color: '#4a4a4a' }}>{b.dept}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            {audienceType === 'Select' && selectedBuyers.length === 0 && (
+              <p className="text-xs mt-2" style={{ color: '#f87171' }}>Select at least one Buyer</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="px-6 py-4 border-t flex items-center gap-3" style={{ borderColor: '#2a2a2a' }}>
+        <button
+          onClick={() => canSave && onSave(buildAudience())}
+          disabled={!canSave}
+          className="flex-1 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-all"
+          style={{ background: canSave ? '#22d3ee' : '#22d3ee40', color: '#000', cursor: canSave ? 'pointer' : 'not-allowed' }}
+          onMouseEnter={e => { if (canSave) e.currentTarget.style.background = '#67e8f9'; }}
+          onMouseLeave={e => { if (canSave) e.currentTarget.style.background = '#22d3ee'; }}
+        >
+          {isManage ? 'Save Changes' : 'Save'}
+          <Icon name="check" size={13} />
+        </button>
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="px-4 py-2 rounded-md text-sm transition-all"
+            style={{ color: '#6b6b6b', border: '1px solid #2a2a2a' }}
+            onMouseEnter={e => { e.currentTarget.style.color = '#f0f0f0'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = '#6b6b6b'; }}
+          >
+            Back
+          </button>
+        )}
+        {!onBack && (
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-md text-sm transition-all"
+            style={{ color: '#6b6b6b', border: '1px solid #2a2a2a' }}
+            onMouseEnter={e => { e.currentTarget.style.color = '#f0f0f0'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = '#6b6b6b'; }}
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ─── PANEL CHROME (shared wrapper) ───────────────────────────────────────────
+function PanelChrome({ title, subtitle, step, onClose, children }) {
+  return (
+    <>
+      <div className="fixed inset-0 z-40" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose} />
+      <div className="fixed top-0 right-0 bottom-0 z-50 flex flex-col panel-enter"
+        style={{ width: '420px', background: '#161616', borderLeft: '1px solid #2a2a2a' }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: '#2a2a2a' }}>
+          <div>
+            <h2 className="text-sm font-semibold text-white">{title}</h2>
+            {subtitle && <p className="text-xs mt-0.5" style={{ color: '#6b6b6b' }}>{subtitle}</p>}
+          </div>
+          <button onClick={onClose} className="w-7 h-7 rounded-md flex items-center justify-center transition-all"
+            style={{ color: '#6b6b6b' }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#ffffff0a'; e.currentTarget.style.color = '#f0f0f0'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b6b6b'; }}>
+            <Icon name="x" size={14} />
+          </button>
+        </div>
+
+        {/* Step indicator (only for create flow) */}
+        {step != null && (
+          <div className="flex items-center gap-2 px-6 py-3 border-b" style={{ borderColor: '#1e1e1e' }}>
+            {[{ n: 1, label: 'Item Details' }, { n: 2, label: 'Sharing Controls' }].map((s, i) => (
+              <React.Fragment key={s.n}>
+                {i > 0 && <Icon name="chevronRight" size={12} style={{ color: '#3a3a3a' }} />}
+                <div className="flex items-center gap-1.5" style={{ opacity: step === s.n ? 1 : 0.4 }}>
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-semibold"
+                    style={{ background: step === s.n ? '#22d3ee' : '#2a2a2a', color: step === s.n ? '#000' : '#6b6b6b' }}>
+                    {s.n}
+                  </div>
+                  <span className="text-xs" style={{ color: step === s.n ? '#f0f0f0' : '#6b6b6b', fontWeight: step === s.n ? 500 : 400 }}>{s.label}</span>
+                </div>
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+
+        {children}
+      </div>
+    </>
+  );
+}
+
+// ─── CATALOG ITEM CREATION PANEL (2-step) ────────────────────────────────────
+function CatalogItemPanel({ onClose, onSave, prefillBuyerId }) {
+  const [step, setStep] = React.useState(1);
+  const [name, setName] = React.useState('');
+  const [desc, setDesc] = React.useState('');
+  const [tags, setTags] = React.useState([]);
+  const [pricing, setPricing] = React.useState('');
+  const [errors, setErrors] = React.useState({});
+
+  const toggleTag = (t) => setTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+
+  const handleContinue = () => {
+    if (!name.trim()) { setErrors({ name: 'Name is required' }); return; }
+    setStep(2);
+  };
+
+  const handleSave = (audience) => {
+    const now = new Date();
+    onSave({
+      id: `ci-${Date.now()}`,
+      name: name.trim(),
+      description: desc.trim(),
+      tags,
+      pricing: pricing.trim(),
+      audience,
+      createdAt: now,
+      grantedAt: audience !== 'Private' ? now : null,
+    });
+  };
+
+  return (
+    <PanelChrome
+      title="New Catalog Item"
+      subtitle={step === 1 ? 'Step 1 of 2 — Item Details' : 'Step 2 of 2 — Sharing Controls'}
+      step={step}
+      onClose={onClose}
+    >
+      {step === 1 ? (
+        <>
+          <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-5">
+            <div>
+              <FormInput label="Item Name *" value={name}
+                onChange={v => { setName(v); setErrors({}); }}
+                placeholder="e.g. Threat Intelligence Feed — Federal" />
+              {errors.name && <p className="text-xs mt-1" style={{ color: '#f87171' }}>{errors.name}</p>}
+            </div>
+            <FormTextarea label="Description" value={desc} onChange={setDesc}
+              placeholder="Describe what this catalog item offers..." rows={4} />
+            <div>
+              <label className="block text-xs font-medium mb-2" style={{ color: '#a0a0a0' }}>Capability Labels</label>
+              <div className="flex flex-wrap gap-2">
+                {CAPABILITY_OPTIONS.map(opt => {
+                  const sel = tags.includes(opt);
+                  return (
+                    <button key={opt} onClick={() => toggleTag(opt)}
+                      className="px-2.5 py-1 rounded-md text-xs font-medium transition-all"
+                      style={sel
+                        ? { background: '#22d3ee15', color: '#67e8f9', border: '1px solid #22d3ee40' }
+                        : { background: '#0f0f0f', color: '#6b6b6b', border: '1px solid #2a2a2a' }}>
+                      {sel && '✓ '}{opt}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <FormInput label="Pricing (optional)" value={pricing} onChange={setPricing}
+              placeholder="e.g. $15,000 / year, Contact for pricing" />
+          </div>
+          <div className="px-6 py-4 border-t flex items-center gap-3" style={{ borderColor: '#2a2a2a' }}>
+            <button onClick={handleContinue}
+              className="flex-1 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-all"
+              style={{ background: '#22d3ee', color: '#000' }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#67e8f9'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = '#22d3ee'; }}>
+              Continue <Icon name="arrowRight" size={13} />
+            </button>
+            <button onClick={onClose}
+              className="px-4 py-2 rounded-md text-sm transition-all"
+              style={{ color: '#6b6b6b', border: '1px solid #2a2a2a' }}
+              onMouseEnter={e => { e.currentTarget.style.color = '#f0f0f0'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = '#6b6b6b'; }}>
+              Cancel
+            </button>
+          </div>
+        </>
+      ) : (
+        <SharingStep
+          itemName={name}
+          prefillBuyerId={prefillBuyerId}
+          initialAudience="Private"
+          onSave={handleSave}
+          onBack={() => setStep(1)}
+          onClose={onClose}
+          isManage={false}
+        />
+      )}
+    </PanelChrome>
+  );
+}
+
+// ─── MANAGE SHARING PANEL (for existing items) ────────────────────────────────
+function ManageSharingPanel({ item, onClose, onSave }) {
+  return (
+    <PanelChrome
+      title="Manage Sharing"
+      subtitle={`"${item.name}"`}
+      step={null}
+      onClose={onClose}
+    >
+      <SharingStep
+        itemName={item.name}
+        prefillBuyerId={null}
+        initialAudience={item.audience}
+        onSave={onSave}
+        onBack={null}
+        onClose={onClose}
+        isManage={true}
+      />
+    </PanelChrome>
+  );
+}
+
+// ─── VISIBILITY BADGE ────────────────────────────────────────────────────────
+function VisibilityBadge({ item }) {
+  const isPrivate = item.audience === 'Private';
+  const isAll = item.audience === 'AllVerifiedBuyers';
+  const isSelect = item.audience?.type === 'Select';
+  const count = isSelect ? item.audience.buyerIds.length : 0;
+
+  if (isPrivate) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md font-medium"
+        style={{ background: '#ffffff06', color: '#6b6b6b', border: '1px solid #2a2a2a' }}>
+        <Icon name="lock" size={11} />
+        Private
+      </span>
+    );
+  }
+  if (isAll) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md font-medium"
+        style={{ background: '#22d3ee12', color: '#67e8f9', border: '1px solid #22d3ee30' }}>
+        <Icon name="users" size={11} />
+        All verified Buyers
+      </span>
+    );
+  }
+  if (isSelect) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md font-medium"
+        style={{ background: '#22d3ee12', color: '#67e8f9', border: '1px solid #22d3ee30' }}>
+        <Icon name="user" size={11} />
+        Shared with {count} Buyer{count !== 1 ? 's' : ''}
+      </span>
+    );
+  }
+  return null;
+}
+
+// ─── CATALOG ITEM CARD ────────────────────────────────────────────────────────
+function CatalogItemCard({ item, onManage, onViewAudience }) {
+  const [hovered, setHovered] = React.useState(false);
+
+  return (
+    <div
+      className="rounded-lg p-5 transition-all duration-150"
+      style={{
+        border: `1px solid ${hovered ? '#3a3a3a' : '#2a2a2a'}`,
+        background: hovered ? '#1a1a1a' : '#161616',
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {/* Title + badge row */}
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <h3 className="text-sm font-medium text-white leading-snug">{item.name}</h3>
+        <div className="shrink-0"><VisibilityBadge item={item} /></div>
+      </div>
+
+      {item.description && (
+        <p className="text-xs leading-relaxed mb-3" style={{ color: '#6b6b6b' }}>{item.description}</p>
+      )}
+
+      {item.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {item.tags.map(t => <TagPill key={t} label={t} />)}
+        </div>
+      )}
+
+      {/* Footer row */}
+      <div className="flex items-center justify-between gap-3 pt-3" style={{ borderTop: '1px solid #1e1e1e' }}>
+        {item.pricing
+          ? <span className="text-xs" style={{ color: '#4a4a4a' }}>{item.pricing}</span>
+          : <span />
+        }
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => onManage(item)}
+            className="text-xs transition-all"
+            style={{ color: '#22d3ee' }}
+            onMouseEnter={e => { e.currentTarget.style.color = '#67e8f9'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = '#22d3ee'; }}
+          >
+            Manage sharing
+          </button>
+          {item.audience !== 'Private' && onViewAudience && (
+            <button
+              onClick={() => onViewAudience()}
+              className="text-xs transition-all"
+              style={{ color: '#22d3ee' }}
+              onMouseEnter={e => { e.currentTarget.style.color = '#67e8f9'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = '#22d3ee'; }}
+            >
+              View who has access
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── SELLER VIEW ─────────────────────────────────────────────────────────────
+function SellerView({ state, dispatch, showToast }) {
+  const [panelOpen, setPanelOpen] = React.useState(false);
+  const [respondingTo, setRespondingTo] = React.useState(null);
+  const [managingItem, setManagingItem] = React.useState(null);
+
+  const visibleWishlists = state.wishlists.filter(w => w.audience === 'AllVerifiedSellers');
+
+  const handleRespond = (wishlistItem) => {
+    setRespondingTo(wishlistItem);
+    setPanelOpen(true);
+  };
+
+  const handleAddNew = () => {
+    setRespondingTo(null);
+    setPanelOpen(true);
+  };
+
+  const handleSave = (item) => {
+    dispatch({ type: 'ADD_CATALOG_ITEM', item });
+    showToast(`"${item.name}" added to your catalog`);
+    setPanelOpen(false);
+    setRespondingTo(null);
+  };
+
+  const handleManageSave = (audience) => {
+    dispatch({ type: 'UPDATE_CATALOG_ITEM_AUDIENCE', itemId: managingItem.id, audience, grantedAt: new Date() });
+    showToast('Sharing settings updated');
+    setManagingItem(null);
+  };
+
+  return (
+    <div className="fade-in">
+      <div className="mb-8">
+        <h1 className="text-xl font-semibold text-white mb-1">Seller Dashboard</h1>
+        <p className="text-sm" style={{ color: '#6b6b6b' }}>Welcome, AcmeCyber. Manage your catalog and respond to Buyer wishlists.</p>
+      </div>
+
+      {/* Section A */}
+      <section className="mb-8">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#6b6b6b' }}>
+            Buyer Wishlists Visible to You
+          </h2>
+          <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: '#ffffff08', color: '#6b6b6b', border: '1px solid #2a2a2a' }}>
+            {visibleWishlists.length} item{visibleWishlists.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+        {visibleWishlists.length === 0 ? (
+          <EmptyState message="No Buyer wishlists are currently shared with you." />
+        ) : (
+          <div className="flex flex-col gap-3">
+            {visibleWishlists.map(w => (
+              <WishlistCard key={w.id} item={w} onRespond={handleRespond} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Section B */}
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#6b6b6b' }}>
+            My Catalog
+          </h2>
+          <button
+            onClick={handleAddNew}
+            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition-all"
+            style={{ background: '#ffffff0a', color: '#a0a0a0', border: '1px solid #2a2a2a' }}
+            onMouseEnter={e => { e.currentTarget.style.color = '#f0f0f0'; e.currentTarget.style.borderColor = '#3a3a3a'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = '#a0a0a0'; e.currentTarget.style.borderColor = '#2a2a2a'; }}
+          >
+            <Icon name="plus" size={12} />
+            Add catalog item
+          </button>
+        </div>
+
+        {state.catalogItems.length === 0 ? (
+          <EmptyState message="You haven't created any catalog items yet." />
+        ) : (
+          <div className="flex flex-col gap-3">
+            {state.catalogItems.map(item => (
+              <CatalogItemCard key={item.id} item={item} onManage={() => setManagingItem(item)} onViewAudience={() => dispatch({ type: 'SET_NAV', tab: 'audience' })} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Create panel */}
+      {panelOpen && (
+        <CatalogItemPanel
+          onClose={() => { setPanelOpen(false); setRespondingTo(null); }}
+          onSave={handleSave}
+          prefillBuyerId={respondingTo?.buyerId || null}
+        />
+      )}
+
+      {/* Manage sharing panel */}
+      {managingItem && (
+        <ManageSharingPanel
+          item={managingItem}
+          onClose={() => setManagingItem(null)}
+          onSave={handleManageSave}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── BUYER VIEW ──────────────────────────────────────────────────────────────
+function BuyerView({ buyer, catalogItems }) {
+  const visibleItems = catalogItems.filter(item => {
+    if (item.audience === 'AllVerifiedBuyers') return true;
+    if (item.audience?.type === 'Select') return item.audience.buyerIds.includes(buyer.id);
+    return false;
+  });
+
+  return (
+    <div className="fade-in">
+      <div className="mb-8">
+        <h1 className="text-xl font-semibold text-white mb-1">
+          Catalog items shared with you
+        </h1>
+        <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-md" style={{ background: '#22d3ee10', border: '1px solid #22d3ee20' }}>
+            <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#22d3ee' }}></div>
+            <span className="text-xs font-semibold" style={{ color: '#22d3ee' }}>{buyer.name}</span>
+          </div>
+          <span className="text-sm" style={{ color: '#6b6b6b' }}>{buyer.dept}</span>
+        </div>
+      </div>
+
+      {visibleItems.length === 0 ? (
+        <EmptyState message="No Sellers have shared catalog items with you yet." />
+      ) : (
+        <div className="flex flex-col gap-3">
+          {visibleItems.map(item => (
+            <BuyerItemCard key={item.id} item={item} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BuyerItemCard({ item }) {
+  const [hovered, setHovered] = React.useState(false);
+  return (
+    <div
+      className="rounded-lg p-5 transition-all duration-150"
+      style={{
+        border: `1px solid ${hovered ? '#3a3a3a' : '#2a2a2a'}`,
+        background: hovered ? '#1a1a1a' : '#161616',
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <h3 className="text-sm font-medium text-white leading-snug">{item.name}</h3>
+        <span className="shrink-0 text-xs px-2 py-0.5 rounded font-medium"
+          style={{ background: '#ffffff06', color: '#6b6b6b', border: '1px solid #2a2a2a' }}>
+          AcmeCyber
+        </span>
+      </div>
+
+      {item.description && (
+        <p className="text-xs leading-relaxed mb-3" style={{ color: '#6b6b6b' }}>{item.description}</p>
+      )}
+
+      {item.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {item.tags.map(t => <TagPill key={t} label={t} variant="accent" />)}
+        </div>
+      )}
+
+      {item.pricing && (
+        <p className="text-xs pt-3" style={{ color: '#4a4a4a', borderTop: '1px solid #1e1e1e' }}>{item.pricing}</p>
+      )}
+    </div>
+  );
+}
+
+// ─── CONFIRM DIALOG ───────────────────────────────────────────────────────────
+function ConfirmDialog({ title, message, confirmLabel, confirmDanger, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 z-60 flex items-center justify-center px-4" style={{ background: 'rgba(0,0,0,0.7)' }}>
+      <div className="w-full max-w-sm rounded-xl p-6 fade-in" style={{ background: '#1a1a1a', border: '1px solid #2a2a2a' }}>
+        <h3 className="text-sm font-semibold text-white mb-2">{title}</h3>
+        <p className="text-xs leading-relaxed mb-6" style={{ color: '#a0a0a0' }}>{message}</p>
+        <div className="flex items-center gap-3 justify-end">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 rounded-md text-xs transition-all"
+            style={{ color: '#6b6b6b', border: '1px solid #2a2a2a' }}
+            onMouseEnter={e => { e.currentTarget.style.color = '#f0f0f0'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = '#6b6b6b'; }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 rounded-md text-xs font-medium transition-all"
+            style={confirmDanger
+              ? { background: '#f87171', color: '#000' }
+              : { background: '#22d3ee', color: '#000' }
+            }
+            onMouseEnter={e => { e.currentTarget.style.opacity = '0.85'; }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+          >
+            {confirmLabel || 'Confirm'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── TIME FORMAT ─────────────────────────────────────────────────────────────
+function formatGrantTime(date) {
+  if (!date) return '—';
+  const now = new Date();
+  const d = new Date(date);
+  const diffMs = now - d;
+  if (diffMs < 60000) return 'Just now';
+  if (diffMs < 3600000) return `${Math.floor(diffMs / 60000)}m ago`;
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function AudienceView({ catalogItems, onRevoke }) {
+  const [revokeTarget, setRevokeTarget] = React.useState(null); // { buyer, item }
+
+  // Derive access rows from catalog items
+  const rows = [];
+  catalogItems.forEach(item => {
+    if (item.audience === 'AllVerifiedBuyers') {
+      BUYERS.forEach(b => rows.push({ buyer: b, item, grantedAt: item.grantedAt }));
+    } else if (item.audience?.type === 'Select') {
+      item.audience.buyerIds.forEach(bid => {
+        const buyer = BUYERS.find(b => b.id === bid);
+        if (buyer) rows.push({ buyer, item, grantedAt: item.grantedAt });
+      });
+    }
+  });
+
+  const grouped = BUYERS.map(b => ({
+    buyer: b,
+    grants: rows.filter(r => r.buyer.id === b.id),
+  })).filter(g => g.grants.length > 0);
+
+  const handleConfirmRevoke = () => {
+    onRevoke(revokeTarget.buyer, revokeTarget.item);
+    setRevokeTarget(null);
+  };
+
+  return (
+    <div className="fade-in">
+      <div className="mb-8">
+        <h1 className="text-xl font-semibold text-white mb-1">Audience Access Overview</h1>
+        <p className="text-sm" style={{ color: '#6b6b6b' }}>Everyone with current access to your catalog items.</p>
+      </div>
+
+      {grouped.length === 0 ? (
+        <EmptyState message="No Buyers currently have access to any catalog items." />
+      ) : (
+        <div className="flex flex-col gap-4">
+          {grouped.map(({ buyer, grants }) => (
+            <div key={buyer.id} className="rounded-lg overflow-hidden" style={{ border: '1px solid #2a2a2a' }}>
+              <div className="px-5 py-3 flex items-center gap-2.5" style={{ background: '#1a1a1a', borderBottom: '1px solid #2a2a2a' }}>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md" style={{ background: '#22d3ee10', border: '1px solid #22d3ee20' }}>
+                  <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#22d3ee' }}></div>
+                  <span className="text-xs font-semibold" style={{ color: '#22d3ee' }}>{buyer.name}</span>
+                </div>
+                <span className="text-xs" style={{ color: '#4a4a4a' }}>{buyer.dept}</span>
+                <span className="ml-auto text-xs px-2 py-0.5 rounded-full" style={{ background: '#ffffff06', color: '#6b6b6b', border: '1px solid #2a2a2a' }}>
+                  {grants.length} item{grants.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+
+              <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #1e1e1e' }}>
+                    <th className="px-5 py-2 text-left text-xs font-medium" style={{ color: '#4a4a4a' }}>Catalog Item</th>
+                    <th className="px-5 py-2 text-left text-xs font-medium" style={{ color: '#4a4a4a' }}>Access Granted</th>
+                    <th className="px-5 py-2 text-right text-xs font-medium" style={{ color: '#4a4a4a' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {grants.map((grant, i) => (
+                    <tr key={grant.item.id}
+                      style={{ borderBottom: i < grants.length - 1 ? '1px solid #1a1a1a' : 'none', background: '#161616' }}>
+                      <td className="px-5 py-3">
+                        <p className="text-sm font-medium text-white">{grant.item.name}</p>
+                        {grant.item.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {grant.item.tags.slice(0, 3).map(t => <TagPill key={t} label={t} />)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className="text-xs" style={{ color: '#6b6b6b' }}>{formatGrantTime(grant.grantedAt)}</span>
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        <button
+                          onClick={() => setRevokeTarget({ buyer: grant.buyer, item: grant.item })}
+                          className="text-xs px-3 py-1.5 rounded-md transition-all"
+                          style={{ color: '#f87171', border: '1px solid #2a2a2a' }}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#f8717115'; e.currentTarget.style.borderColor = '#f8717140'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = '#2a2a2a'; }}
+                        >
+                          Revoke
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Confirmation dialog */}
+      {revokeTarget && (
+        <ConfirmDialog
+          title={`Revoke ${revokeTarget.buyer.name}'s access?`}
+          message={`Revoke ${revokeTarget.buyer.name}'s access to "${revokeTarget.item.name}"? This action takes effect immediately.`}
+          confirmLabel="Revoke access"
+          confirmDanger={true}
+          onConfirm={handleConfirmRevoke}
+          onCancel={() => setRevokeTarget(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── EMPTY STATE ─────────────────────────────────────────────────────────────
+function EmptyState({ message }) {
+  return (
+    <div className="rounded-lg px-5 py-10 flex items-center justify-center" style={{ border: '1px solid #2a2a2a', background: '#161616' }}>
+      <p className="text-xs" style={{ color: '#3a3a3a' }}>{message}</p>
+    </div>
+  );
+}
+
+// ─── PLACEHOLDER SECTION ─────────────────────────────────────────────────────
+function PlaceholderSection({ label }) {
+  return (
+    <div className="rounded-lg" style={{ border: '1px solid #2a2a2a', background: '#161616' }}>
+      <div className="px-5 py-3 border-b" style={{ borderColor: '#2a2a2a' }}>
+        <span className="text-xs font-medium" style={{ color: '#6b6b6b' }}>{label}</span>
+      </div>
+      <div className="px-5 py-12 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 rounded-lg mx-auto mb-3 flex items-center justify-center" style={{ background: '#ffffff05', border: '1px solid #2a2a2a' }}>
+            <div className="w-2 h-2 rounded-sm" style={{ background: '#2a2a2a' }}></div>
+          </div>
+          <p className="text-xs" style={{ color: '#3a3a3a' }}>Content coming in next step</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── REDUCER ─────────────────────────────────────────────────────────────────
+function reducer(state, action) {
+  switch (action.type) {
+    case 'START_DEMO':
+      return { ...state, screen: 'main', role: 'seller', navTab: 'dashboard' };
+    case 'SET_ROLE':
+      return { ...state, role: action.role, navTab: action.role === 'seller' ? (state.navTab || 'dashboard') : null };
+    case 'SET_NAV':
+      return { ...state, navTab: action.tab };
+    case 'ADD_CATALOG_ITEM':
+      return { ...state, catalogItems: [...state.catalogItems, action.item] };
+    case 'UPDATE_CATALOG_ITEM_AUDIENCE':
+      return {
+        ...state,
+        catalogItems: state.catalogItems.map(ci =>
+          ci.id === action.itemId ? { ...ci, audience: action.audience, grantedAt: action.grantedAt } : ci
+        ),
+      };
+    case 'REVOKE_ACCESS': {
+      const { itemId, buyerId } = action;
+      return {
+        ...state,
+        catalogItems: state.catalogItems.map(ci => {
+          if (ci.id !== itemId) return ci;
+          if (ci.audience === 'AllVerifiedBuyers') {
+            const remaining = BUYERS.map(b => b.id).filter(id => id !== buyerId);
+            return { ...ci, audience: remaining.length ? { type: 'Select', buyerIds: remaining } : 'Private' };
+          }
+          if (ci.audience?.type === 'Select') {
+            const remaining = ci.audience.buyerIds.filter(id => id !== buyerId);
+            return { ...ci, audience: remaining.length ? { type: 'Select', buyerIds: remaining } : 'Private' };
+          }
+          return ci;
+        }),
+      };
+    }
+    case 'RESET':
+      return { ...INITIAL_STATE, screen: 'intro' };
+    default:
+      return state;
+  }
+}
+
+// ─── MAIN APP ────────────────────────────────────────────────────────────────
+function App() {
+  const [state, dispatch] = React.useReducer(reducer, { ...INITIAL_STATE, screen: 'intro', navTab: 'dashboard' });
+  const [toasts, setToasts] = React.useState([]);
+  const [guideOpen, setGuideOpen] = React.useState(false);
+  const [resetConfirm, setResetConfirm] = React.useState(false);
+
+  const showToast = React.useCallback((message, type = 'success') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+  }, []);
+
+  const handleRevoke = (buyer, item) => {
+    dispatch({ type: 'REVOKE_ACCESS', itemId: item.id, buyerId: buyer.id });
+    showToast(`${buyer.name}'s access to "${item.name}" revoked`, 'danger');
+  };
+
+  const renderMain = () => {
+    if (state.role === 'seller') {
+      if (state.navTab === 'audience') return <AudienceView catalogItems={state.catalogItems} onRevoke={handleRevoke} showToast={showToast} />;
+      return <SellerView state={state} dispatch={dispatch} showToast={showToast} />;
+    }
+    if (state.role === 'buyerX') return <BuyerView buyer={{ id: 'dhs', name: 'DHS', dept: 'Department of Homeland Security' }} catalogItems={state.catalogItems} />;
+    if (state.role === 'buyerY') return <BuyerView buyer={{ id: 'dod', name: 'DoD', dept: 'Department of Defense' }} catalogItems={state.catalogItems} />;
+  };
+
+  if (state.screen === 'intro') {
+    return <IntroScreen dispatch={dispatch} />;
+  }
+
+  return (
+    <div className="min-h-screen" style={{ background: '#0f0f0f' }}>
+      <Header state={state} dispatch={dispatch} onResetClick={() => setResetConfirm(true)} />
+      <main className="max-w-5xl mx-auto px-6 pt-24 pb-16">
+        {renderMain()}
+      </main>
+
+      <DemoGuide open={guideOpen} onToggle={() => setGuideOpen(o => !o)} />
+      <ToastContainer toasts={toasts} />
+
+      {resetConfirm && (
+        <ConfirmDialog
+          title="Reset demo?"
+          message="This will clear all catalog items and sharing state, returning to the intro screen."
+          confirmLabel="Reset"
+          confirmDanger={false}
+          onConfirm={() => { dispatch({ type: 'RESET' }); setResetConfirm(false); setGuideOpen(false); }}
+          onCancel={() => setResetConfirm(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
